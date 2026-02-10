@@ -173,7 +173,7 @@ trap 'error "終了シグナルを受信しました"; exit 143' TERM
 
 usage() {
     printf '%b\n' "
-${BOLD}Usage:${NC} $SCRIPT_NAME [options]
+${BOLD}Usage:${NC} install.sh [options]
 
 ${BOLD}Description:${NC}
     XServer向け vim 環境セットアップスクリプト
@@ -188,8 +188,8 @@ ${BOLD}Remote Usage:${NC}
     bash <(curl -sL ${REPO_BASE_URL}/install.sh)
 
 ${BOLD}Examples:${NC}
-    $SCRIPT_NAME
-    $SCRIPT_NAME --force
+    install.sh
+    install.sh --force
 "
 }
 
@@ -206,30 +206,30 @@ FORCE=false
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            -v|--version)
-                version
-                exit 0
-                ;;
-            -f|--force)
-                FORCE=true
-                shift
-                ;;
-            --)
-                shift
-                break
-                ;;
-            -*)
-                error "不明なオプション: $1"
-                usage >&2
-                exit 2
-                ;;
-            *)
-                break
-                ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        -v | --version)
+            version
+            exit 0
+            ;;
+        -f | --force)
+            FORCE=true
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            error "不明なオプション: $1"
+            usage >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
         esac
     done
 }
@@ -258,11 +258,38 @@ header "Vim Setup - XServer"
 
 TOTAL_STEPS=3
 
-# Step 1: 環境チェック
+# Step 1: 環境チェック & vimインストール
 step 1 $TOTAL_STEPS "環境をチェックしています..."
-require_command vim
 require_command curl
-success "vim と curl が利用可能です"
+
+if command -v vim &>/dev/null; then
+    success "vim と curl が利用可能です"
+else
+    warn "vim がインストールされていません"
+    info "vim をインストールします..."
+
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq vim
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y vim
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y vim
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm vim
+    elif command -v apk &>/dev/null; then
+        sudo apk add vim
+    else
+        error "パッケージマネージャーを検出できません。手動で vim をインストールしてください"
+        exit 1
+    fi
+
+    if command -v vim &>/dev/null; then
+        success "vim のインストールが完了しました"
+    else
+        error "vim のインストールに失敗しました"
+        exit 1
+    fi
+fi
 
 # Step 2: 既存ファイルの確認
 step 2 $TOTAL_STEPS "既存の .vimrc を確認しています..."
