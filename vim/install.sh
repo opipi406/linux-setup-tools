@@ -19,6 +19,9 @@ REPO_BASE_URL="https://raw.githubusercontent.com/opipi406/linux-setup-tools/main
 VIMRC_URL="${REPO_BASE_URL}/vimrc.template"
 VIMRC_PATH="$HOME/.vimrc"
 
+VIM_INSTALL_PREFIX="$HOME/local"
+VIM_BUILD_DIR="$HOME/.vim_build_tmp"
+
 # =============================================================================
 # Color and Icon Definitions
 # =============================================================================
@@ -156,7 +159,153 @@ require_command() {
 }
 
 cleanup() {
-    :
+    cleanup_build_artifacts
+}
+
+check_sudo_available() {
+    sudo -n true 2>/dev/null
+}
+
+cleanup_build_artifacts() {
+    if [[ -d "$VIM_BUILD_DIR" ]]; then
+        rm -rf "$VIM_BUILD_DIR"
+    fi
+}
+
+fetch_latest_vim_version() {
+    local latest_tag
+    latest_tag=$(curl -fsSL "https://api.github.com/repos/vim/vim/tags?per_page=1" \
+        | grep -o '"name": *"v[^"]*"' | head -1 | grep -o 'v[^"]*')
+    if [[ -z "$latest_tag" ]]; then
+        error "vim の最新バージョンを取得できませんでした"
+        exit 1
+    fi
+    echo "${latest_tag#v}"
+}
+
+build_vim_from_source() {
+    # 最新バージョンの取得
+    info "vim の最新バージョンを確認しています..."
+    local vim_version
+    vim_version=$(fetch_latest_vim_version)
+    local vim_source_url="https://github.com/vim/vim/archive/refs/tags/v${vim_version}.tar.gz"
+
+    # ビルドツールの確認
+    local missing_tools=()
+    for tool in make tar; do
+        if ! command -v "$tool" &>/dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+    if ! command -v gcc &>/dev/null && ! command -v cc &>/dev/null; then
+        missing_tools+=("gcc")
+    fi
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        error "ソースビルドに必要なツールが不足しています: ${missing_tools[*]}"
+        error "システム管理者にインストールを依頼してください"
+        exit 1
+    fi
+
+    # ビルドディレクトリの準備
+    cleanup_build_artifacts
+    mkdir -p "$VIM_BUILD_DIR"
+
+    # ソースのダウンロードと展開
+    info "vim ${vim_version} のソースをダウンロードしています..."
+    if ! curl -fsSL "$vim_source_url" -o "$VIM_BUILD_DIR/vim.tar.gz"; then
+        error "vim のソースコードのダウンロードに失敗しました"
+        exit 1
+    fi
+    tar xzf "$VIM_BUILD_DIR/vim.tar.gz" -C "$VIM_BUILD_DIR" --strip-components=1
+
+    # configure & make
+    info "vim をビルドしています（数分かかる場合があります）..."
+    cd "$VIM_BUILD_DIR"
+    ./configure \
+        --prefix="$VIM_INSTALL_PREFIX" \
+        --enable-gui=no \
+        --without-x \
+        --with-tlib=ncurses \
+        --with-features=normal \
+        &>/dev/null
+
+    local nproc_val
+    nproc_val=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+    make -j"$nproc_val" &>/dev/null
+
+    # インストール
+    mkdir -p "$VIM_INSTALL_PREFIX"
+    make install &>/dev/null
+    cd - &>/dev/null
+
+    # ビルドアーティファクトの削除
+    cleanup_build_artifacts
+
+    if [[ -x "$VIM_INSTALL_PREFIX/bin/vim" ]]; then
+        success "vim のソースビルドが完了しました → $VIM_INSTALL_PREFIX/bin/vim"
+    else
+        error "vim のソースビルドに失敗しました"
+        exit 1
+    fi
+}
+
+setup_vim_path() {
+    local path_entry="export PATH=\"$VIM_INSTALL_PREFIX/bin:\$PATH\""
+
+    # 既にPATHに含まれている場合はスキップ
+    if [[ ":$PATH:" == *":$VIM_INSTALL_PREFIX/bin:"* ]]; then
+        return 0
+    fi
+
+    # .bashrc に PATH を追加
+    local bashrc="$HOME/.bashrc"
+    if [[ -f "$bashrc" ]] && grep -qF "$VIM_INSTALL_PREFIX/bin" "$bashrc"; then
+        return 0
+    fi
+
+    echo "" >> "$bashrc"
+    echo "# vim (source build)" >> "$bashrc"
+    echo "$path_entry" >> "$bashrc"
+    info "PATH設定を .bashrc に追加しました"
+    info "反映するには: source ~/.bashrc"
+
+    # 現在のセッションにも反映
+    export PATH="$VIM_INSTALL_PREFIX/bin:$PATH"
+}
+
+install_vim_auto() {
+    if check_sudo_available; then
+        # sudo が使える場合: パッケージマネージャーでインストール
+        info "パッケージマネージャーで vim をインストールします..."
+        if command -v apt-get &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq vim
+        elif command -v yum &>/dev/null; then
+            sudo yum install -y vim
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y vim
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -S --noconfirm vim
+        elif command -v apk &>/dev/null; then
+            sudo apk add vim
+        else
+            warn "パッケージマネージャーを検出できません。ソースからビルドします..."
+            build_vim_from_source
+            setup_vim_path
+            return
+        fi
+
+        if command -v vim &>/dev/null; then
+            success "vim のインストールが完了しました"
+        else
+            error "vim のインストールに失敗しました"
+            exit 1
+        fi
+    else
+        # sudo が使えない場合: ソースビルド
+        warn "sudo が利用できません。ソースから vim をビルドします..."
+        build_vim_from_source
+        setup_vim_path
+    fi
 }
 
 # =============================================================================
@@ -262,33 +411,9 @@ TOTAL_STEPS=3
 step 1 $TOTAL_STEPS "環境をチェックしています..."
 require_command curl
 
-if command -v vim &>/dev/null; then
-    success "vim と curl が利用可能です"
-else
+if ! command -v vim &>/dev/null; then
     warn "vim がインストールされていません"
-    info "vim をインストールします..."
-
-    if command -v apt-get &>/dev/null; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq vim
-    elif command -v yum &>/dev/null; then
-        sudo yum install -y vim
-    elif command -v dnf &>/dev/null; then
-        sudo dnf install -y vim
-    elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm vim
-    elif command -v apk &>/dev/null; then
-        sudo apk add vim
-    else
-        error "パッケージマネージャーを検出できません。手動で vim をインストールしてください"
-        exit 1
-    fi
-
-    if command -v vim &>/dev/null; then
-        success "vim のインストールが完了しました"
-    else
-        error "vim のインストールに失敗しました"
-        exit 1
-    fi
+    install_vim_auto
 fi
 
 # Step 2: 既存ファイルの確認
