@@ -369,7 +369,12 @@ else
     fi
 
     if ! $SKIP_BUILD; then
-        spinner "ncurses をビルド中" build_ncurses_from_source
+        info "ncurses をビルド中"
+        if build_ncurses_from_source; then
+            success "ncurses をビルド中"
+        else
+            error "ncurses をビルド中"
+        fi
         info "インストール先: $INSTALL_PREFIX"
     fi
 fi
@@ -388,7 +393,12 @@ else
     fi
 
     if ! $SKIP_BUILD; then
-        spinner "Vim をビルド中" build_vim_from_source
+        info "Vim をビルド中"
+        if build_vim_from_source; then
+            success "Vim をビルド中"
+        else
+            error "Vim をビルド中"
+        fi
 
         if [[ -x "$INSTALL_PREFIX/bin/vim" ]]; then
             success "Vim のインストールが完了しました ${ICON_ARROW} $INSTALL_PREFIX/bin/vim"
@@ -443,7 +453,12 @@ fi
 if $SKIP_VIMRC; then
     warn ".vimrc の設定をスキップしました"
 else
-    spinner ".vimrc をダウンロード中" download_vimrc
+    info ".vimrc をダウンロード中"
+    if download_vimrc; then
+        success ".vimrc をダウンロード中"
+    else
+        error ".vimrc をダウンロード中"
+    fi
 fi
 
 echo
