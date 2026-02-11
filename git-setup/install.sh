@@ -13,7 +13,6 @@ set -euo pipefail
 # =============================================================================
 
 SCRIPT_NAME="git-setup"
-SCRIPT_VERSION="1.0.0"
 
 GIT_COMPLETION_URL="https://raw.githubusercontent.com/git/git/master/contrib/completion/git-completion.bash"
 GIT_PROMPT_URL="https://raw.githubusercontent.com/git/git/master/contrib/completion/git-prompt.sh"
@@ -187,7 +186,6 @@ ${BOLD}Description:${NC}
 
 ${BOLD}Options:${NC}
     -h, --help      ヘルプを表示
-    -v, --version   バージョンを表示
     -f, --force     確認なしで実行
 
 ${BOLD}Remote Usage:${NC}
@@ -197,10 +195,6 @@ ${BOLD}Examples:${NC}
     install.sh
     install.sh --force
 "
-}
-
-version() {
-    echo "$SCRIPT_NAME version $SCRIPT_VERSION"
 }
 
 # =============================================================================
@@ -214,10 +208,6 @@ parse_args() {
         case "$1" in
         -h | --help)
             usage
-            exit 0
-            ;;
-        -v | --version)
-            version
             exit 0
             ;;
         -f | --force)
@@ -352,12 +342,8 @@ if [[ -f "$GIT_COMPLETION_PATH" ]] || [[ -f "$GIT_PROMPT_PATH" ]]; then
             backup_dir=$(backup_git_files)
             info "バックアップを作成しました ${ICON_ARROW} $backup_dir"
         else
-            if confirm "バックアップなしで上書きしますか？"; then
-                info "バックアップなしで続行します"
-            else
-                info "セットアップを中止しました"
-                exit 0
-            fi
+            info "セットアップを中止しました"
+            exit 0
         fi
     fi
 else

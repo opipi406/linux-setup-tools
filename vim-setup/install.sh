@@ -4,7 +4,7 @@
 # Description: XServer向け vim 環境セットアップスクリプト
 # Usage: bash <(curl -sL https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/vim-setup/install.sh)
 #
-# Requirements: Bash 4.0+, curl
+# Requirements: Bash 4.0+, curl, git, make, gcc(or cc)
 
 set -euo pipefail
 
@@ -13,14 +13,13 @@ set -euo pipefail
 # =============================================================================
 
 SCRIPT_NAME="vim-setup"
-SCRIPT_VERSION="1.0.0"
 
-REPO_BASE_URL="https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/vim"
+REPO_BASE_URL="https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/vim-setup"
 VIMRC_URL="${REPO_BASE_URL}/vimrc.template"
 VIMRC_PATH="$HOME/.vimrc"
 
-VIM_INSTALL_PREFIX="$HOME/local"
-VIM_BUILD_DIR="$HOME/.vim_build_tmp"
+INSTALL_PREFIX="$HOME/local"
+BUILD_DIR="$HOME/download"
 
 # =============================================================================
 # Color and Icon Definitions
@@ -161,153 +160,97 @@ require_command() {
 }
 
 cleanup() {
-    cleanup_build_artifacts
+    :
 }
 
-check_sudo_available() {
-    sudo -n true 2>/dev/null
-}
+# =============================================================================
+# Core Functions
+# =============================================================================
 
-cleanup_build_artifacts() {
-    if [[ -d "$VIM_BUILD_DIR" ]]; then
-        rm -rf "$VIM_BUILD_DIR"
+build_ncurses_from_source() {
+    local ncurses_url="https://invisible-island.net/datafiles/release/ncurses.tar.gz"
+
+    mkdir -p "$BUILD_DIR"
+
+    curl -fsSL "$ncurses_url" -o "$BUILD_DIR/ncurses.tar.gz"
+    tar xzf "$BUILD_DIR/ncurses.tar.gz" -C "$BUILD_DIR"
+
+    local ncurses_dir
+    ncurses_dir=$(find "$BUILD_DIR" -maxdepth 1 -type d -name "ncurses-*" | head -1)
+
+    if [[ -z "$ncurses_dir" ]]; then
+        error "ncurses のソース展開に失敗しました"
+        return 1
     fi
-}
 
-fetch_latest_vim_version() {
-    local latest_tag
-    latest_tag=$(curl -fsSL "https://api.github.com/repos/vim/vim/tags?per_page=1" |
-        grep -o '"name": *"v[^"]*"' | head -1 | grep -o 'v[^"]*')
-    if [[ -z "$latest_tag" ]]; then
-        error "vim の最新バージョンを取得できませんでした"
-        exit 1
-    fi
-    echo "${latest_tag#v}"
+    cd "$ncurses_dir"
+    ./configure --prefix="$INSTALL_PREFIX" &>/dev/null
+    make &>/dev/null
+    make install &>/dev/null
+    cd - &>/dev/null
 }
 
 build_vim_from_source() {
-    # 最新バージョンの取得
-    info "vim の最新バージョンを確認しています..."
-    local vim_version
-    vim_version=$(fetch_latest_vim_version)
-    local vim_source_url="https://github.com/vim/vim/archive/refs/tags/v${vim_version}.tar.gz"
+    mkdir -p "$BUILD_DIR"
 
-    # ビルドツールの確認
-    local missing_tools=()
-    for tool in make tar; do
-        if ! command -v "$tool" &>/dev/null; then
-            missing_tools+=("$tool")
-        fi
-    done
-    if ! command -v gcc &>/dev/null && ! command -v cc &>/dev/null; then
-        missing_tools+=("gcc")
-    fi
-    if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        error "ソースビルドに必要なツールが不足しています: ${missing_tools[*]}"
-        error "システム管理者にインストールを依頼してください"
-        exit 1
-    fi
+    cd "$BUILD_DIR"
+    git clone --depth 1 https://github.com/vim/vim.git &>/dev/null
+    cd vim
 
-    # ビルドディレクトリの準備
-    cleanup_build_artifacts
-    mkdir -p "$VIM_BUILD_DIR"
-
-    # ソースのダウンロードと展開
-    info "vim ${vim_version} のソースをダウンロードしています..."
-    if ! curl -fsSL "$vim_source_url" -o "$VIM_BUILD_DIR/vim.tar.gz"; then
-        error "vim のソースコードのダウンロードに失敗しました"
-        exit 1
-    fi
-    tar xzf "$VIM_BUILD_DIR/vim.tar.gz" -C "$VIM_BUILD_DIR" --strip-components=1
-
-    # configure & make
-    info "vim をビルドしています（数分かかる場合があります）..."
-    cd "$VIM_BUILD_DIR"
-    ./configure \
-        --prefix="$VIM_INSTALL_PREFIX" \
-        --enable-gui=no \
-        --without-x \
-        --with-tlib=ncurses \
-        --with-features=normal \
-        &>/dev/null
-
-    local nproc_val
-    nproc_val=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
-    make -j"$nproc_val" &>/dev/null
-
-    # インストール
-    mkdir -p "$VIM_INSTALL_PREFIX"
+    ./configure --prefix="$INSTALL_PREFIX" --with-local-dir="$INSTALL_PREFIX" &>/dev/null
+    make &>/dev/null
     make install &>/dev/null
     cd - &>/dev/null
-
-    # ビルドアーティファクトの削除
-    cleanup_build_artifacts
-
-    if [[ -x "$VIM_INSTALL_PREFIX/bin/vim" ]]; then
-        success "vim のソースビルドが完了しました → $VIM_INSTALL_PREFIX/bin/vim"
-    else
-        error "vim のソースビルドに失敗しました"
-        exit 1
-    fi
 }
 
-setup_vim_path() {
-    local path_entry="export PATH=\"$VIM_INSTALL_PREFIX/bin:\$PATH\""
-
-    # 既にPATHに含まれている場合はスキップ
-    if [[ ":$PATH:" == *":$VIM_INSTALL_PREFIX/bin:"* ]]; then
-        return 0
-    fi
-
-    # .bashrc に PATH を追加
+setup_vim_environment() {
     local bashrc="$HOME/.bashrc"
-    if [[ -f "$bashrc" ]] && grep -qF "$VIM_INSTALL_PREFIX/bin" "$bashrc"; then
-        return 0
+    local path_entry="export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
+    local alias_entry="alias vi='vim'"
+    local changed=false
+
+    # .bashrc がなければ作成
+    if [[ ! -f "$bashrc" ]]; then
+        touch "$bashrc"
     fi
 
-    echo "" >>"$bashrc"
-    echo "# vim (source build)" >>"$bashrc"
-    echo "$path_entry" >>"$bashrc"
-    info "PATH設定を .bashrc に追加しました"
-    info "反映するには: source ~/.bashrc"
+    # PATH 追加（重複チェック）
+    if ! grep -qF "$INSTALL_PREFIX/bin" "$bashrc" 2>/dev/null; then
+        {
+            echo ""
+            echo "# vim (source build)"
+            echo "$path_entry"
+        } >>"$bashrc"
+        changed=true
+    fi
+
+    # alias vi='vim' 追加（重複チェック）
+    if ! grep -qF "alias vi='vim'" "$bashrc" 2>/dev/null; then
+        if ! $changed; then
+            echo "" >>"$bashrc"
+        fi
+        echo "$alias_entry" >>"$bashrc"
+        changed=true
+    fi
+
+    if $changed; then
+        success ".bashrc に PATH と alias を追加しました"
+    else
+        info ".bashrc の設定は既に存在します"
+    fi
 
     # 現在のセッションにも反映
-    export PATH="$VIM_INSTALL_PREFIX/bin:$PATH"
+    export PATH="$INSTALL_PREFIX/bin:$PATH"
 }
 
-install_vim_auto() {
-    if check_sudo_available; then
-        # sudo が使える場合: パッケージマネージャーでインストール
-        info "パッケージマネージャーで vim をインストールします..."
-        if command -v apt-get &>/dev/null; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq vim
-        elif command -v yum &>/dev/null; then
-            sudo yum install -y vim
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y vim
-        elif command -v pacman &>/dev/null; then
-            sudo pacman -S --noconfirm vim
-        elif command -v apk &>/dev/null; then
-            sudo apk add vim
-        else
-            warn "パッケージマネージャーを検出できません。ソースからビルドします..."
-            build_vim_from_source
-            setup_vim_path
-            return
-        fi
+download_vimrc() {
+    curl -fsSL "$VIMRC_URL" -o "$VIMRC_PATH"
+}
 
-        if command -v vim &>/dev/null; then
-            success "vim のインストールが完了しました"
-        else
-            error "vim のインストールに失敗しました"
-            exit 1
-        fi
-    else
-        # sudo が使えない場合: ソースビルド
-        warn "sudo が利用できません。ソースから vim をビルドします..."
-        build_vim_from_source
-        setup_vim_path
-    fi
+backup_vimrc() {
+    local backup_path="${VIMRC_PATH}.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$VIMRC_PATH" "$backup_path"
+    echo "$backup_path"
 }
 
 # =============================================================================
@@ -328,12 +271,11 @@ ${BOLD}Usage:${NC} install.sh [options]
 
 ${BOLD}Description:${NC}
     XServer向け vim 環境セットアップスクリプト
-    GitHubリポジトリから .vimrc をダウンロードして配置します。
+    ncurses・vim をソースビルドし、.vimrc を配置します。
 
 ${BOLD}Options:${NC}
     -h, --help      ヘルプを表示
-    -v, --version   バージョンを表示
-    -f, --force     確認なしで上書き
+    -f, --force     確認なしで実行
 
 ${BOLD}Remote Usage:${NC}
     bash <(curl -sL ${REPO_BASE_URL}/install.sh)
@@ -342,10 +284,6 @@ ${BOLD}Examples:${NC}
     install.sh
     install.sh --force
 "
-}
-
-version() {
-    echo "$SCRIPT_NAME version $SCRIPT_VERSION"
 }
 
 # =============================================================================
@@ -359,10 +297,6 @@ parse_args() {
         case "$1" in
         -h | --help)
             usage
-            exit 0
-            ;;
-        -v | --version)
-            version
             exit 0
             ;;
         -f | --force)
@@ -386,20 +320,6 @@ parse_args() {
 }
 
 # =============================================================================
-# Core Functions
-# =============================================================================
-
-download_vimrc() {
-    curl -fsSL "$VIMRC_URL" -o "$VIMRC_PATH"
-}
-
-backup_vimrc() {
-    local backup_path="${VIMRC_PATH}.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$VIMRC_PATH" "$backup_path"
-    echo "$backup_path"
-}
-
-# =============================================================================
 # Main Logic
 # =============================================================================
 
@@ -407,19 +327,95 @@ parse_args "$@"
 
 header "Vim Setup - XServer"
 
-TOTAL_STEPS=3
+TOTAL_STEPS=5
 
-# Step 1: 環境チェック & vimインストール
+# Step 1: 環境チェック
 step 1 $TOTAL_STEPS "環境をチェックしています..."
+
+require_command git
+require_command make
 require_command curl
 
-if ! command -v vim &>/dev/null; then
-    warn "vim がインストールされていません"
-    install_vim_auto
+if ! command -v gcc &>/dev/null && ! command -v cc &>/dev/null; then
+    error "必要なコマンドが見つかりません: gcc (or cc)"
+    exit 1
 fi
 
-# Step 2: 既存ファイルの確認
-step 2 $TOTAL_STEPS "既存の .vimrc を確認しています..."
+if command -v vim &>/dev/null; then
+    warn "vim は既にインストールされています: $(command -v vim)"
+    if ! $FORCE; then
+        if ! confirm "vim を再インストールしますか？"; then
+            warn "vim のインストールをスキップしました"
+            # Step 4, 5 のみ実行するためフラグを設定
+            SKIP_BUILD=true
+        fi
+    fi
+fi
+
+SKIP_BUILD="${SKIP_BUILD:-false}"
+success "環境チェック完了"
+
+# Step 2: ncurses のインストール
+step 2 $TOTAL_STEPS "ncurses をインストールしています..."
+
+if $SKIP_BUILD; then
+    warn "ncurses のインストールをスキップしました"
+else
+    if ! $FORCE; then
+        if ! confirm "ncurses をインストールしますか？"; then
+            warn "ncurses のインストールをスキップしました"
+            SKIP_BUILD=true
+        fi
+    fi
+
+    if ! $SKIP_BUILD; then
+        spinner "ncurses をビルド中" build_ncurses_from_source
+        info "インストール先: $INSTALL_PREFIX"
+    fi
+fi
+
+# Step 3: Vim のインストール
+step 3 $TOTAL_STEPS "Vim をインストールしています..."
+
+if $SKIP_BUILD; then
+    warn "Vim のインストールをスキップしました"
+else
+    if ! $FORCE; then
+        if ! confirm "Vim をインストールしますか？"; then
+            warn "Vim のインストールをスキップしました"
+            SKIP_BUILD=true
+        fi
+    fi
+
+    if ! $SKIP_BUILD; then
+        spinner "Vim をビルド中" build_vim_from_source
+
+        if [[ -x "$INSTALL_PREFIX/bin/vim" ]]; then
+            success "Vim のインストールが完了しました ${ICON_ARROW} $INSTALL_PREFIX/bin/vim"
+        else
+            error "Vim のインストールに失敗しました"
+            exit 1
+        fi
+    fi
+fi
+
+# Step 4: 環境設定 (PATH・alias)
+step 4 $TOTAL_STEPS "環境設定を確認しています..."
+
+if ! $FORCE; then
+    if ! confirm ".bashrc に PATH と alias を追加しますか？"; then
+        warn "環境設定をスキップしました"
+    else
+        setup_vim_environment
+    fi
+else
+    setup_vim_environment
+fi
+
+# Step 5: .vimrc の設定
+step 5 $TOTAL_STEPS ".vimrc を設定しています..."
+
+SKIP_VIMRC=false
 
 if [[ -f "$VIMRC_PATH" ]]; then
     warn ".vimrc が既に存在します: $VIMRC_PATH"
@@ -432,24 +428,27 @@ if [[ -f "$VIMRC_PATH" ]]; then
             backup_path=$(backup_vimrc)
             info "バックアップを作成しました ${ICON_ARROW} $backup_path"
         else
-            if confirm "バックアップなしで上書きしますか？"; then
-                info "バックアップなしで続行します"
-            else
-                info "セットアップを中止しました"
-                exit 0
-            fi
+            SKIP_VIMRC=true
         fi
     fi
 else
     info ".vimrc は存在しません。新規作成します"
+    if ! $FORCE; then
+        if ! confirm ".vimrc をダウンロードして配置しますか？"; then
+            SKIP_VIMRC=true
+        fi
+    fi
 fi
 
-# Step 3: .vimrc のダウンロードと配置
-step 3 $TOTAL_STEPS ".vimrc をダウンロードしています..."
-spinner ".vimrc をダウンロード中" download_vimrc
+if $SKIP_VIMRC; then
+    warn ".vimrc の設定をスキップしました"
+else
+    spinner ".vimrc をダウンロード中" download_vimrc
+fi
 
 echo
 success "vim 環境のセットアップが完了しました"
-info "配置先: $VIMRC_PATH"
-info "設定を確認するには: vim ~/.vimrc"
+info "配置先: $INSTALL_PREFIX/bin/vim"
+info "設定ファイル: $VIMRC_PATH"
+info "設定を反映するには: source ~/.bashrc"
 echo

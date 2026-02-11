@@ -5,7 +5,7 @@
 SSH接続先で以下のコマンドを実行してください。
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/git-prompt/install.sh)
+bash <(curl -sL https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/git-setup/install.sh)
 ```
 
 詳細なオプションは `--help` で確認できます。
