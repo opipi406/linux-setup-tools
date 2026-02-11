@@ -102,7 +102,7 @@ confirm() {
         prompt="$prompt [y/N] "
     fi
 
-    printf "${YELLOW}${prompt}${NC}"
+    printf "${MAGENTA}${prompt}${NC}"
     read -r reply
 
     if [[ -z "$reply" ]]; then
