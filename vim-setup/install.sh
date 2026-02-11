@@ -184,23 +184,23 @@ build_ncurses_from_source() {
     fi
 
     cd "$ncurses_dir"
-    ./configure --prefix="$INSTALL_PREFIX" &>/dev/null
-    make &>/dev/null
-    make install &>/dev/null
-    cd - &>/dev/null
+    ./configure --prefix="$INSTALL_PREFIX"
+    make
+    make install
+    cd -
 }
 
 build_vim_from_source() {
     mkdir -p "$BUILD_DIR"
 
     cd "$BUILD_DIR"
-    git clone --depth 1 https://github.com/vim/vim.git &>/dev/null
+    git clone --depth 1 https://github.com/vim/vim.git
     cd vim
 
-    ./configure --prefix="$INSTALL_PREFIX" --with-local-dir="$INSTALL_PREFIX" &>/dev/null
-    make &>/dev/null
-    make install &>/dev/null
-    cd - &>/dev/null
+    ./configure --prefix="$INSTALL_PREFIX" --with-local-dir="$INSTALL_PREFIX"
+    make
+    make install
+    cd -
 }
 
 setup_vim_environment() {
