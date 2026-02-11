@@ -2,7 +2,7 @@
 #
 # Script Name: vim-setup
 # Description: XServer向け vim 環境セットアップスクリプト
-# Usage: bash <(curl -sL https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/vim/install.sh)
+# Usage: bash <(curl -sL https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/vim-setup/install.sh)
 #
 # Requirements: Bash 4.0+, curl
 
@@ -37,12 +37,13 @@ if $COLOR_ENABLED; then
     GREEN='\033[0;32m'
     YELLOW='\033[0;33m'
     BLUE='\033[0;34m'
+    MAGENTA='\033[0;35m'
     CYAN='\033[0;36m'
     BOLD='\033[1m'
     DIM='\033[2m'
     NC='\033[0m'
 else
-    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' DIM='' NC=''
+    RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' BOLD='' DIM='' NC=''
 fi
 
 ICON_CHECK="✓"
@@ -50,25 +51,26 @@ ICON_CROSS="✗"
 ICON_WARN="⚠"
 ICON_INFO="ℹ"
 ICON_ARROW="→"
+ICON_BULLET="•"
 
 # =============================================================================
 # Output Functions
 # =============================================================================
 
 info() {
-    printf "${BLUE}[${ICON_INFO} INFO]${NC} %s\n" "$*"
+    printf "${BLUE}${ICON_INFO}  %s${NC}\n" "$*"
 }
 
 success() {
-    printf "${GREEN}[${ICON_CHECK} OK]${NC} %s\n" "$*"
+    printf "${GREEN}${ICON_CHECK}  %s${NC}\n" "$*"
 }
 
 warn() {
-    printf "${YELLOW}[${ICON_WARN} WARN]${NC} %s\n" "$*" >&2
+    printf "${YELLOW}${ICON_WARN}  %s${NC}\n" "$*" >&2
 }
 
 error() {
-    printf "${RED}[${ICON_CROSS} ERROR]${NC} %s\n" "$*" >&2
+    printf "${RED}${ICON_CROSS}  %s${NC}\n" "$*" >&2
 }
 
 step() {
@@ -174,8 +176,8 @@ cleanup_build_artifacts() {
 
 fetch_latest_vim_version() {
     local latest_tag
-    latest_tag=$(curl -fsSL "https://api.github.com/repos/vim/vim/tags?per_page=1" \
-        | grep -o '"name": *"v[^"]*"' | head -1 | grep -o 'v[^"]*')
+    latest_tag=$(curl -fsSL "https://api.github.com/repos/vim/vim/tags?per_page=1" |
+        grep -o '"name": *"v[^"]*"' | head -1 | grep -o 'v[^"]*')
     if [[ -z "$latest_tag" ]]; then
         error "vim の最新バージョンを取得できませんでした"
         exit 1
@@ -263,9 +265,9 @@ setup_vim_path() {
         return 0
     fi
 
-    echo "" >> "$bashrc"
-    echo "# vim (source build)" >> "$bashrc"
-    echo "$path_entry" >> "$bashrc"
+    echo "" >>"$bashrc"
+    echo "# vim (source build)" >>"$bashrc"
+    echo "$path_entry" >>"$bashrc"
     info "PATH設定を .bashrc に追加しました"
     info "反映するには: source ~/.bashrc"
 
