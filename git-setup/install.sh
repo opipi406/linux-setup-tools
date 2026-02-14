@@ -277,7 +277,7 @@ fi
 if [ -f "$HOME/.git-prompt.sh" ]; then
     source "$HOME/.git-prompt.sh"
     GIT_PS1_SHOWDIRTYSTATE=true
-    export PS1='\h \[\033[01;33m\]\w\[\033[01;31m\]$(__git_ps1 " (%s)")\[\e[m\] \$ '
+    export PS1='[\u@\h \[\033[01;33m\]\w\[\033[01;31m\]$(__git_ps1 " (%s)")\[\e[m\]]\$ '
 fi
 BASHRC_EOF
     )
