@@ -18,8 +18,8 @@ REPO_BASE_URL="https://raw.githubusercontent.com/opipi406/linux-setup-tools/main
 VIMRC_URL="${REPO_BASE_URL}/vimrc.template"
 VIMRC_PATH="$HOME/.vimrc"
 
-INSTALL_PREFIX="$HOME/local"
-BUILD_DIR="$HOME/download"
+INSTALL_PREFIX="$HOME/opt/vim"
+BUILD_DIR="$HOME/opt/vim/src"
 
 NCURSES_URL="https://invisible-island.net/datafiles/release/ncurses.tar.gz"
 VIM_REPO_URL="https://github.com/vim/vim.git"
@@ -105,7 +105,7 @@ build_ncurses_from_source() {
 
     mkdir -p "$BUILD_DIR"
 
-    curl -fsSL "$NCURSES_URL" -o "$BUILD_DIR/ncurses.tar.gz"
+    curl -fSL "$NCURSES_URL" -o "$BUILD_DIR/ncurses.tar.gz"
     tar xzf "$BUILD_DIR/ncurses.tar.gz" -C "$BUILD_DIR"
 
     local ncurses_dir
@@ -121,11 +121,10 @@ build_ncurses_from_source() {
         cd "$ncurses_dir"
         ./configure --prefix="$INSTALL_PREFIX" \
             --without-debug \
-            --without-tests \
-            >>"$log_file" 2>&1
-        make >>"$log_file" 2>&1
-        make install >>"$log_file" 2>&1
-    )
+            --without-tests
+        make
+        make install
+    ) 2>&1 | tee -a "$log_file"
 }
 
 build_vim_from_source() {
@@ -142,20 +141,20 @@ build_vim_from_source() {
     (
         set -euo pipefail
         cd "$BUILD_DIR"
-        git clone --depth 1 "$VIM_REPO_URL" >>"$log_file" 2>&1
+        git clone --depth 1 "$VIM_REPO_URL"
         cd vim
 
         CPPFLAGS="-I$INSTALL_PREFIX/include" \
         LDFLAGS="-L$INSTALL_PREFIX/lib" \
         ./configure --prefix="$INSTALL_PREFIX" \
             --with-local-dir="$INSTALL_PREFIX" \
-            --with-tlib=ncurses \
+            --with-features=huge \
             --enable-multibyte \
-            >>"$log_file" 2>&1
+            --enable-fail-if-missing
 
-        make >>"$log_file" 2>&1
-        make install >>"$log_file" 2>&1
-    )
+        make
+        make install
+    ) 2>&1 | tee -a "$log_file"
 }
 
 setup_vim_environment() {
@@ -197,8 +196,8 @@ setup_vim_environment() {
 
 clean_build_artifacts() {
     if [[ -d "$BUILD_DIR" ]]; then
-        rm -rf "$BUILD_DIR/ncurses-"* "$BUILD_DIR/ncurses.tar.gz" "$BUILD_DIR/vim"
-        success "ビルドファイルを削除しました"
+        rm -rf "$BUILD_DIR"
+        success "ビルドソースを削除しました: $BUILD_DIR"
     fi
 }
 
@@ -324,6 +323,7 @@ else
 
     if ! $SKIP_BUILD; then
         info "ncurses をビルド中..."
+        sleep 2
         if build_ncurses_from_source; then
             success "ncurses のインストールが完了しました"
             info "インストール先: $INSTALL_PREFIX"
@@ -350,6 +350,7 @@ else
 
     if ! $SKIP_BUILD; then
         info "Vim をビルド中..."
+        sleep 2
         if build_vim_from_source; then
             success "Vim のインストールが完了しました"
             info "配置先: $INSTALL_PREFIX/bin/vim"
@@ -439,4 +440,5 @@ success "vim 環境のセットアップが完了しました"
 info "配置先: $INSTALL_PREFIX/bin/vim"
 info "設定ファイル: $VIMRC_PATH"
 info "設定を反映するには: source ~/.bashrc"
+info "アンインストール: rm -rf $INSTALL_PREFIX"
 echo

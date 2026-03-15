@@ -99,12 +99,12 @@ require_command() {
 }
 
 download_git_completion() {
-    curl -fsSL "$GIT_COMPLETION_URL" -o "$GIT_COMPLETION_PATH"
+    curl -fSL "$GIT_COMPLETION_URL" -o "$GIT_COMPLETION_PATH"
     chmod +x "$GIT_COMPLETION_PATH"
 }
 
 download_git_prompt() {
-    curl -fsSL "$GIT_PROMPT_URL" -o "$GIT_PROMPT_PATH"
+    curl -fSL "$GIT_PROMPT_URL" -o "$GIT_PROMPT_PATH"
     chmod +x "$GIT_PROMPT_PATH"
 }
 
@@ -282,6 +282,9 @@ fi
 
 # Step 3: ダウンロード
 step 3 $TOTAL_STEPS "ファイルをダウンロードしています..."
+
+info "git-completion.bash をダウンロード中..."
+sleep 2
 if download_git_completion; then
     success "git-completion.bash をダウンロードしました"
 else
@@ -289,6 +292,8 @@ else
     exit 1
 fi
 
+info "git-prompt.sh をダウンロード中..."
+sleep 2
 if download_git_prompt; then
     success "git-prompt.sh をダウンロードしました"
 else
