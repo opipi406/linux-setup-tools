@@ -20,58 +20,28 @@ GIT_COMPLETION_PATH="$HOME/.git-completion.bash"
 GIT_PROMPT_PATH="$HOME/.git-prompt.sh"
 BASHRC_PATH="$HOME/.bashrc"
 
-REPO_BASE_URL="https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/git-prompt"
+REPO_BASE_URL="https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/git-setup"
 
 # =============================================================================
-# Color and Icon Definitions
+# Color Definitions
 # =============================================================================
 
 if [[ -t 1 ]] && [[ "${TERM:-}" != "dumb" ]]; then
-    COLOR_ENABLED=true
-else
-    COLOR_ENABLED=false
-fi
-
-if $COLOR_ENABLED; then
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[0;33m'
-    BLUE='\033[0;34m'
-    MAGENTA='\033[0;35m'
-    CYAN='\033[0;36m'
-    BOLD='\033[1m'
-    DIM='\033[2m'
-    NC='\033[0m'
+    RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m'
+    BLUE='\033[0;34m' MAGENTA='\033[0;35m' CYAN='\033[0;36m'
+    BOLD='\033[1m' DIM='\033[2m' NC='\033[0m'
 else
     RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' BOLD='' DIM='' NC=''
 fi
-
-ICON_CHECK="✓"
-ICON_CROSS="✗"
-ICON_WARN="⚠"
-ICON_INFO="ℹ"
-ICON_ARROW="→"
-ICON_BULLET="•"
 
 # =============================================================================
 # Output Functions
 # =============================================================================
 
-info() {
-    printf "${BLUE}${ICON_INFO}  %s${NC}\n" "$*"
-}
-
-success() {
-    printf "${GREEN}${ICON_CHECK}  %s${NC}\n" "$*"
-}
-
-warn() {
-    printf "${YELLOW}${ICON_WARN}  %s${NC}\n" "$*" >&2
-}
-
-error() {
-    printf "${RED}${ICON_CROSS}  %s${NC}\n" "$*" >&2
-}
+info()    { printf "${BLUE}[INFO]${NC}  %s\n" "$*"; }
+success() { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
+warn()    { printf "${YELLOW}[WARN]${NC}  %s\n" "$*" >&2; }
+error()   { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 
 step() {
     local current="$1"
@@ -112,44 +82,12 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
-# =============================================================================
-# Spinner Functions
-# =============================================================================
-
-spinner() {
-    local message="$1"
-    shift
-    local pid
-    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    local i=0
-
-    "$@" &
-    pid=$!
-
-    printf '\033[?25l'
-
-    while kill -0 "$pid" 2>/dev/null; do
-        printf "\r${CYAN}[%s]${NC} %s" "${spin_chars:i++%${#spin_chars}:1}" "$message"
-        sleep 0.1
-    done
-
-    wait "$pid"
-    local exit_code=$?
-
-    printf '\033[?25h'
-    printf '\r\033[K'
-
-    if [[ $exit_code -eq 0 ]]; then
-        success "$message"
-    else
-        error "$message"
-    fi
-
-    return $exit_code
+cleanup() {
+    :
 }
 
 # =============================================================================
-# Utility Functions
+# Core Functions
 # =============================================================================
 
 require_command() {
@@ -159,80 +97,6 @@ require_command() {
         exit 1
     fi
 }
-
-cleanup() {
-    :
-}
-
-# =============================================================================
-# Signal Handling
-# =============================================================================
-
-trap cleanup EXIT
-trap 'echo; error "中断されました"; exit 130' INT
-trap 'error "終了シグナルを受信しました"; exit 143' TERM
-
-# =============================================================================
-# Usage and Help
-# =============================================================================
-
-usage() {
-    printf '%b\n' "
-${BOLD}Usage:${NC} install.sh [options]
-
-${BOLD}Description:${NC}
-    git-completion.bash / git-prompt.sh セットアップスクリプト
-    GitHubリポジトリからファイルをダウンロードし、.bashrc に設定を追加します。
-
-${BOLD}Options:${NC}
-    -h, --help      ヘルプを表示
-    -f, --force     確認なしで実行
-
-${BOLD}Remote Usage:${NC}
-    bash <(curl -sL ${REPO_BASE_URL}/install.sh)
-
-${BOLD}Examples:${NC}
-    install.sh
-    install.sh --force
-"
-}
-
-# =============================================================================
-# Argument Parsing
-# =============================================================================
-
-FORCE=false
-
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-        -h | --help)
-            usage
-            exit 0
-            ;;
-        -f | --force)
-            FORCE=true
-            shift
-            ;;
-        --)
-            shift
-            break
-            ;;
-        -*)
-            error "不明なオプション: $1"
-            usage >&2
-            exit 2
-            ;;
-        *)
-            break
-            ;;
-        esac
-    done
-}
-
-# =============================================================================
-# Core Functions
-# =============================================================================
 
 download_git_completion() {
     curl -fsSL "$GIT_COMPLETION_URL" -o "$GIT_COMPLETION_PATH"
@@ -306,6 +170,72 @@ MANUAL_EOF
 }
 
 # =============================================================================
+# Signal Handling
+# =============================================================================
+
+trap cleanup EXIT
+trap 'echo; error "中断されました"; exit 130' INT
+trap 'error "終了シグナルを受信しました"; exit 143' TERM
+
+# =============================================================================
+# Usage and Help
+# =============================================================================
+
+usage() {
+    printf '%b\n' "
+${BOLD}Usage:${NC} install.sh [options]
+
+${BOLD}Description:${NC}
+    git-completion.bash / git-prompt.sh セットアップスクリプト
+    GitHubリポジトリからファイルをダウンロードし、.bashrc に設定を追加します。
+
+${BOLD}Options:${NC}
+    -h, --help      ヘルプを表示
+    -f, --force     確認なしで実行
+
+${BOLD}Remote Usage:${NC}
+    bash <(curl -sL ${REPO_BASE_URL}/install.sh)
+
+${BOLD}Examples:${NC}
+    install.sh
+    install.sh --force
+"
+}
+
+# =============================================================================
+# Argument Parsing
+# =============================================================================
+
+FORCE=false
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        -f | --force)
+            FORCE=true
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            error "不明なオプション: $1"
+            usage >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
+        esac
+    done
+}
+
+# =============================================================================
 # Main Logic
 # =============================================================================
 
@@ -336,11 +266,11 @@ if [[ -f "$GIT_COMPLETION_PATH" ]] || [[ -f "$GIT_PROMPT_PATH" ]]; then
 
     if $FORCE; then
         backup_dir=$(backup_git_files)
-        info "バックアップを作成しました ${ICON_ARROW} $backup_dir"
+        info "バックアップを作成しました: $backup_dir"
     else
         if confirm "既存ファイルをバックアップして上書きしますか？"; then
             backup_dir=$(backup_git_files)
-            info "バックアップを作成しました ${ICON_ARROW} $backup_dir"
+            info "バックアップを作成しました: $backup_dir"
         else
             info "セットアップを中止しました"
             exit 0
@@ -352,8 +282,19 @@ fi
 
 # Step 3: ダウンロード
 step 3 $TOTAL_STEPS "ファイルをダウンロードしています..."
-spinner "git-completion.bash をダウンロード中" download_git_completion
-spinner "git-prompt.sh をダウンロード中" download_git_prompt
+if download_git_completion; then
+    success "git-completion.bash をダウンロードしました"
+else
+    error "git-completion.bash のダウンロードに失敗しました"
+    exit 1
+fi
+
+if download_git_prompt; then
+    success "git-prompt.sh をダウンロードしました"
+else
+    error "git-prompt.sh のダウンロードに失敗しました"
+    exit 1
+fi
 info "配置先: $GIT_COMPLETION_PATH"
 info "配置先: $GIT_PROMPT_PATH"
 

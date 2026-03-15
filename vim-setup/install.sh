@@ -21,56 +21,29 @@ VIMRC_PATH="$HOME/.vimrc"
 INSTALL_PREFIX="$HOME/local"
 BUILD_DIR="$HOME/download"
 
+NCURSES_URL="https://invisible-island.net/datafiles/release/ncurses.tar.gz"
+VIM_REPO_URL="https://github.com/vim/vim.git"
+
 # =============================================================================
-# Color and Icon Definitions
+# Color Definitions
 # =============================================================================
 
 if [[ -t 1 ]] && [[ "${TERM:-}" != "dumb" ]]; then
-    COLOR_ENABLED=true
-else
-    COLOR_ENABLED=false
-fi
-
-if $COLOR_ENABLED; then
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[0;33m'
-    BLUE='\033[0;34m'
-    MAGENTA='\033[0;35m'
-    CYAN='\033[0;36m'
-    BOLD='\033[1m'
-    DIM='\033[2m'
-    NC='\033[0m'
+    RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m'
+    BLUE='\033[0;34m' MAGENTA='\033[0;35m' CYAN='\033[0;36m'
+    BOLD='\033[1m' DIM='\033[2m' NC='\033[0m'
 else
     RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN='' BOLD='' DIM='' NC=''
 fi
-
-ICON_CHECK="✓"
-ICON_CROSS="✗"
-ICON_WARN="⚠"
-ICON_INFO="ℹ"
-ICON_ARROW="→"
-ICON_BULLET="•"
 
 # =============================================================================
 # Output Functions
 # =============================================================================
 
-info() {
-    printf "${BLUE}${ICON_INFO}  %s${NC}\n" "$*"
-}
-
-success() {
-    printf "${GREEN}${ICON_CHECK}  %s${NC}\n" "$*"
-}
-
-warn() {
-    printf "${YELLOW}${ICON_WARN}  %s${NC}\n" "$*" >&2
-}
-
-error() {
-    printf "${RED}${ICON_CROSS}  %s${NC}\n" "$*" >&2
-}
+info()    { printf "${BLUE}[INFO]${NC}  %s\n" "$*"; }
+success() { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
+warn()    { printf "${YELLOW}[WARN]${NC}  %s\n" "$*" >&2; }
+error()   { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 
 step() {
     local current="$1"
@@ -111,44 +84,12 @@ confirm() {
     [[ "$reply" =~ ^[Yy] ]]
 }
 
-# =============================================================================
-# Spinner Functions
-# =============================================================================
-
-spinner() {
-    local message="$1"
-    shift
-    local pid
-    local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    local i=0
-
-    "$@" &
-    pid=$!
-
-    printf '\033[?25l'
-
-    while kill -0 "$pid" 2>/dev/null; do
-        printf "\r${CYAN}[%s]${NC} %s" "${spin_chars:i++%${#spin_chars}:1}" "$message"
-        sleep 0.1
-    done
-
-    wait "$pid"
-    local exit_code=$?
-
-    printf '\033[?25h'
-    printf '\r\033[K'
-
-    if [[ $exit_code -eq 0 ]]; then
-        success "$message"
-    else
-        error "$message"
-    fi
-
-    return $exit_code
+cleanup() {
+    :
 }
 
 # =============================================================================
-# Utility Functions
+# Core Functions
 # =============================================================================
 
 require_command() {
@@ -159,20 +100,12 @@ require_command() {
     fi
 }
 
-cleanup() {
-    :
-}
-
-# =============================================================================
-# Core Functions
-# =============================================================================
-
 build_ncurses_from_source() {
-    local ncurses_url="https://invisible-island.net/datafiles/release/ncurses.tar.gz"
+    local log_file="$BUILD_DIR/ncurses-build.log"
 
     mkdir -p "$BUILD_DIR"
 
-    curl -fsSL "$ncurses_url" -o "$BUILD_DIR/ncurses.tar.gz"
+    curl -fsSL "$NCURSES_URL" -o "$BUILD_DIR/ncurses.tar.gz"
     tar xzf "$BUILD_DIR/ncurses.tar.gz" -C "$BUILD_DIR"
 
     local ncurses_dir
@@ -183,33 +116,52 @@ build_ncurses_from_source() {
         return 1
     fi
 
-    cd "$ncurses_dir"
-    ./configure --prefix="$INSTALL_PREFIX"
-    make
-    make install
-    cd -
+    (
+        set -euo pipefail
+        cd "$ncurses_dir"
+        ./configure --prefix="$INSTALL_PREFIX" \
+            --without-debug \
+            --without-tests \
+            >>"$log_file" 2>&1
+        make >>"$log_file" 2>&1
+        make install >>"$log_file" 2>&1
+    )
 }
 
 build_vim_from_source() {
+    local log_file="$BUILD_DIR/vim-build.log"
+    local vim_src="$BUILD_DIR/vim"
+
     mkdir -p "$BUILD_DIR"
 
-    cd "$BUILD_DIR"
-    git clone --depth 1 https://github.com/vim/vim.git
-    cd vim
+    # 既存のソースがあれば削除
+    if [[ -d "$vim_src" ]]; then
+        rm -rf "$vim_src"
+    fi
 
-    ./configure --prefix="$INSTALL_PREFIX" --with-local-dir="$INSTALL_PREFIX"
-    make
-    make install
-    cd -
+    (
+        set -euo pipefail
+        cd "$BUILD_DIR"
+        git clone --depth 1 "$VIM_REPO_URL" >>"$log_file" 2>&1
+        cd vim
+
+        CPPFLAGS="-I$INSTALL_PREFIX/include" \
+        LDFLAGS="-L$INSTALL_PREFIX/lib" \
+        ./configure --prefix="$INSTALL_PREFIX" \
+            --with-local-dir="$INSTALL_PREFIX" \
+            --with-tlib=ncurses \
+            --enable-multibyte \
+            >>"$log_file" 2>&1
+
+        make >>"$log_file" 2>&1
+        make install >>"$log_file" 2>&1
+    )
 }
 
 setup_vim_environment() {
     local bashrc="$HOME/.bashrc"
-    local path_entry="export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
-    local alias_entry="alias vi='vim'"
     local changed=false
 
-    # .bashrc がなければ作成
     if [[ ! -f "$bashrc" ]]; then
         touch "$bashrc"
     fi
@@ -219,7 +171,7 @@ setup_vim_environment() {
         {
             echo ""
             echo "# vim (source build)"
-            echo "$path_entry"
+            echo "export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
         } >>"$bashrc"
         changed=true
     fi
@@ -229,7 +181,7 @@ setup_vim_environment() {
         if ! $changed; then
             echo "" >>"$bashrc"
         fi
-        echo "$alias_entry" >>"$bashrc"
+        echo "alias vi='vim'" >>"$bashrc"
         changed=true
     fi
 
@@ -243,8 +195,11 @@ setup_vim_environment() {
     export PATH="$INSTALL_PREFIX/bin:$PATH"
 }
 
-download_vimrc() {
-    curl -fsSL "$VIMRC_URL" -o "$VIMRC_PATH"
+clean_build_artifacts() {
+    if [[ -d "$BUILD_DIR" ]]; then
+        rm -rf "$BUILD_DIR/ncurses-"* "$BUILD_DIR/ncurses.tar.gz" "$BUILD_DIR/vim"
+        success "ビルドファイルを削除しました"
+    fi
 }
 
 backup_vimrc() {
@@ -327,7 +282,7 @@ parse_args "$@"
 
 header "Vim Setup - XServer"
 
-TOTAL_STEPS=5
+TOTAL_STEPS=6
 
 # Step 1: 環境チェック
 step 1 $TOTAL_STEPS "環境をチェックしています..."
@@ -346,7 +301,6 @@ if command -v vim &>/dev/null; then
     if ! $FORCE; then
         if ! confirm "vim を再インストールしますか？"; then
             warn "vim のインストールをスキップしました"
-            # Step 4, 5 のみ実行するためフラグを設定
             SKIP_BUILD=true
         fi
     fi
@@ -362,20 +316,22 @@ if $SKIP_BUILD; then
     warn "ncurses のインストールをスキップしました"
 else
     if ! $FORCE; then
-        if ! confirm "ncurses をインストールしますか？"; then
+        if ! confirm "ncurses をソースからビルドしますか？"; then
             warn "ncurses のインストールをスキップしました"
             SKIP_BUILD=true
         fi
     fi
 
     if ! $SKIP_BUILD; then
-        info "ncurses をビルド中"
+        info "ncurses をビルド中..."
         if build_ncurses_from_source; then
-            success "ncurses をビルド中"
+            success "ncurses のインストールが完了しました"
+            info "インストール先: $INSTALL_PREFIX"
         else
-            error "ncurses をビルド中"
+            error "ncurses のビルドに失敗しました"
+            info "ログファイル: $BUILD_DIR/ncurses-build.log"
+            exit 1
         fi
-        info "インストール先: $INSTALL_PREFIX"
     fi
 fi
 
@@ -386,24 +342,25 @@ if $SKIP_BUILD; then
     warn "Vim のインストールをスキップしました"
 else
     if ! $FORCE; then
-        if ! confirm "Vim をインストールしますか？"; then
+        if ! confirm "Vim をソースからビルドしますか？"; then
             warn "Vim のインストールをスキップしました"
             SKIP_BUILD=true
         fi
     fi
 
     if ! $SKIP_BUILD; then
-        info "Vim をビルド中"
+        info "Vim をビルド中..."
         if build_vim_from_source; then
-            success "Vim をビルド中"
+            success "Vim のインストールが完了しました"
+            info "配置先: $INSTALL_PREFIX/bin/vim"
         else
-            error "Vim をビルド中"
+            error "Vim のビルドに失敗しました"
+            info "ログファイル: $BUILD_DIR/vim-build.log"
+            exit 1
         fi
 
-        if [[ -x "$INSTALL_PREFIX/bin/vim" ]]; then
-            success "Vim のインストールが完了しました ${ICON_ARROW} $INSTALL_PREFIX/bin/vim"
-        else
-            error "Vim のインストールに失敗しました"
+        if [[ ! -x "$INSTALL_PREFIX/bin/vim" ]]; then
+            error "Vim のバイナリが見つかりません: $INSTALL_PREFIX/bin/vim"
             exit 1
         fi
     fi
@@ -432,11 +389,11 @@ if [[ -f "$VIMRC_PATH" ]]; then
 
     if $FORCE; then
         backup_path=$(backup_vimrc)
-        info "バックアップを作成しました ${ICON_ARROW} $backup_path"
+        info "バックアップを作成しました: $backup_path"
     else
         if confirm "既存の .vimrc をバックアップして上書きしますか？"; then
             backup_path=$(backup_vimrc)
-            info "バックアップを作成しました ${ICON_ARROW} $backup_path"
+            info "バックアップを作成しました: $backup_path"
         else
             SKIP_VIMRC=true
         fi
@@ -453,12 +410,28 @@ fi
 if $SKIP_VIMRC; then
     warn ".vimrc の設定をスキップしました"
 else
-    info ".vimrc をダウンロード中"
-    if download_vimrc; then
-        success ".vimrc をダウンロード中"
+    if curl -fsSL "$VIMRC_URL" -o "$VIMRC_PATH"; then
+        success ".vimrc を配置しました: $VIMRC_PATH"
     else
-        error ".vimrc をダウンロード中"
+        error ".vimrc のダウンロードに失敗しました"
     fi
+fi
+
+# Step 6: ビルドファイルのクリーンアップ
+step 6 $TOTAL_STEPS "ビルドファイルをクリーンアップしています..."
+
+if ! $SKIP_BUILD; then
+    if $FORCE; then
+        clean_build_artifacts
+    else
+        if confirm "ビルドに使用したファイルを削除しますか？" "y"; then
+            clean_build_artifacts
+        else
+            warn "ビルドファイルを保持しました: $BUILD_DIR"
+        fi
+    fi
+else
+    info "ビルドファイルのクリーンアップは不要です"
 fi
 
 echo
