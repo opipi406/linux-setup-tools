@@ -5,8 +5,18 @@
 # Usage: bash <(curl -sL https://raw.githubusercontent.com/opipi406/linux-setup-tools/main/vim-setup/install.sh)
 #
 # Requirements: Bash 4.0+, curl, git, make, gcc(or cc)
+#
+# NOTE: このスクリプトは現在メンテナンス中のため、実行しても何も行いません。
+#
+# Reference:
+#   https://gist.github.com/ko31/50e9bdbdc5e4f2da5e7d1f96361e78fb
+#
 
 set -euo pipefail
+
+# 現在このツールは動作しないため、早期終了する
+echo "vim-setup は現在無効化されています。"
+exit 0
 
 # =============================================================================
 # Configuration
@@ -120,8 +130,12 @@ build_ncurses_from_source() {
         set -euo pipefail
         cd "$ncurses_dir"
         ./configure --prefix="$INSTALL_PREFIX" \
+            --with-shared \
+            --with-normal \
             --without-debug \
-            --without-tests
+            --without-tests \
+            --enable-pc-files \
+            --with-pkg-config-libdir="$INSTALL_PREFIX/lib/pkgconfig"
         make
         make install
     ) 2>&1 | tee -a "$log_file"
@@ -144,16 +158,17 @@ build_vim_from_source() {
         git clone --depth 1 "$VIM_REPO_URL"
         cd vim
 
-        CPPFLAGS="-I$INSTALL_PREFIX/include" \
-        LDFLAGS="-L$INSTALL_PREFIX/lib" \
-        ./configure --prefix="$INSTALL_PREFIX" \
-            --with-local-dir="$INSTALL_PREFIX" \
-            --with-features=huge \
-            --enable-multibyte \
-            --enable-fail-if-missing
+        # make のコマンドライン引数で CPPFLAGS/LDFLAGS を渡す
+        # (vim の Makefile が reconfig 時に環境変数をクリアするため)
+        make \
+            CPPFLAGS="-I$INSTALL_PREFIX/include -I$INSTALL_PREFIX/include/ncurses" \
+            LDFLAGS="-L$INSTALL_PREFIX/lib" \
+            CONF_OPT_FEAT="--with-features=huge" \
+            CONF_OPT_MULTIBYTE="--enable-multibyte" \
+            CONF_OPT_MISC="--enable-fail-if-missing --with-tlib=ncurses --with-local-dir=$INSTALL_PREFIX" \
+            prefix="$INSTALL_PREFIX"
 
-        make
-        make install
+        make install prefix="$INSTALL_PREFIX"
     ) 2>&1 | tee -a "$log_file"
 }
 
